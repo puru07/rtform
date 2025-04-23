@@ -1,0 +1,22 @@
+# Ignore Python cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+*.pyo
+*.pyd
+
+# VS Code / PyCharm / IDEs
+.vscode/
+.idea/
+
+# ROS 2 build artifacts
+build/
+install/
+log/
+
+# Colcon Python symlinks
+*.egg-info/
