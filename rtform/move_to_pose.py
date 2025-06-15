@@ -27,15 +27,16 @@ class MoveToPoseNode(Node):
         # ✨ Define the goal pose for the end-effector
         goal_pose = PoseStamped()
         goal_pose.header.frame_id = "base_link"
-        goal_pose.pose.position.x = 0.4
-        goal_pose.pose.position.y = 0.0
-        goal_pose.pose.position.z = 0.3
+        goal_pose.pose.position.x = 0.275 # 0.4
+        goal_pose.pose.position.y = 1.462 - 1 # 0.0
+        goal_pose.pose.position.z = -0.009 + 0.2 # 0.3
 
         # Orientation (as quaternion)
         goal_pose.pose.orientation.x = 0.0
         goal_pose.pose.orientation.y = 1.0
         goal_pose.pose.orientation.z = 0.0
         goal_pose.pose.orientation.w = 0.0
+        print(goal_pose.pose.position)
 
         request = GetMotionPlan.Request()
         request.motion_plan_request.group_name = 'ur_manipulator'
