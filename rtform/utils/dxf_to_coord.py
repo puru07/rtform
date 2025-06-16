@@ -3,6 +3,9 @@
 import ezdxf
 import matplotlib.pyplot as plt
 import numpy as np
+import json
+import os
+from pathlib import Path
 
 
 def load_dxf(file_path):
@@ -30,13 +33,18 @@ def calculate_min_distance(points):
     return min(distances) if distances else float('inf')
 
 
-def extract_figure(msp, title="DXF Viewer", print_min_distances=True):
+def extract_figure(msp,  percentage_increase=20, title="DXF Viewer",):
     """
     Plot the DXF entities using matplotlib and return a dictionary of points for each entity.
+    Also, calculates and prints the four corners of the DXF drawing and increases the dimensions by 20%.
     """
     fig, ax = plt.subplots()
     entity_points = {}  # Dictionary to store points for each entity
     entity_count = 0
+
+    # Initialize variables to track the bounding box
+    min_x, min_y = float('inf'), float('inf')
+    max_x, max_y = float('-inf'), float('-inf')
 
     for entity in msp:
         entity_count += 1
@@ -46,9 +54,13 @@ def extract_figure(msp, title="DXF Viewer", print_min_distances=True):
             entity_points[entity_count] = pts
             xs, ys = zip(*pts)
             ax.plot(xs, ys, linewidth=1.0)
-            if print_min_distances:
-                min_dist = calculate_min_distance(pts)
-                print(f"Entity {entity_count} (LWPOLYLINE) - Minimum distance between points: {min_dist:.4f}")
+
+            # Update bounding box
+            for x, y in pts:
+                min_x = min(min_x, x)
+                min_y = min(min_y, y)
+                max_x = max(max_x, x)
+                max_y = max(max_y, y)
 
         elif entity.dxftype() == 'LINE':
             s, t = entity.dxf.start, entity.dxf.end
@@ -56,16 +68,53 @@ def extract_figure(msp, title="DXF Viewer", print_min_distances=True):
             entity_points[entity_count] = pts
             ax.plot([s.x, t.x], [s.y, t.y], linewidth=1.0)
             ax.plot([s.x, t.x], [s.y, t.y], 'o', markersize=2)
-            if print_min_distances:
-                min_dist = calculate_min_distance(pts)
-                print(f"Entity {entity_count} (LINE) - Distance between points: {min_dist:.4f}")
+
+            # Update bounding box
+            min_x = min(min_x, s.x, t.x)
+            min_y = min(min_y, s.y, t.y)
+            max_x = max(max_x, s.x, t.x)
+            max_y = max(max_y, s.y, t.y)
+
+    # Print the original dimensions of the DXF file (bounding box)
+    width = max_x - min_x
+    height = max_y - min_y
+    print(f"Original DXF Dimensions: Width = {width:.4f}, Height = {height:.4f}")
+
+    # Increase the bounding box by the specified percentage
+    width *= (1 + percentage_increase/100)
+    height *= (1 + percentage_increase/100)
+
+    # Calculate the new min_x, max_x, min_y, max_y by expanding the original box
+    center_x = (min_x + max_x) / 2
+    center_y = (min_y + max_y) / 2
+
+    # Adjust the corners to expand by 20%
+    half_width = width / 2
+    half_height = height / 2
+
+    min_x = center_x - half_width
+    max_x = center_x + half_width
+    min_y = center_y - half_height
+    max_y = center_y + half_height
+
+    # Calculate the four corners after expanding the bounding box by 20%
+    corners = [(min_x, min_y), (min_x, max_y), (max_x, min_y), (max_x, max_y)]
+    print(f"Expanded DXF Dimensions: Width = {width:.4f}, Height = {height:.4f}")
+    print(f"Corners of the expanded DXF bounding box: {corners}")
+
+    # Plot the corners
+    corners = np.array(corners)
+    ax.plot(corners[:, 0], corners[:, 1], 'k*', markersize=10, label='Corners')
 
     ax.set_aspect('equal', adjustable='datalim')
     ax.margins(0.02)
     plt.grid(True)
+    plt.legend()
+    plt.title('DXF Drawing with Expanded Bounding Box')
     plt.show()
     
-    return entity_points
+    return entity_points, corners  # Return corners as well
+
 
 
 def interpolate_points(entity_points, min_distance):
@@ -105,15 +154,16 @@ def interpolate_points(entity_points, min_distance):
     return interpolated_points
 
 
-def analyze_and_interpolate_points(points_in_dxf):
+def analyze_and_interpolate_points(points_in_dxf, original_corners):
     """
     Analyze the minimum distances between points and interpolate new points to maintain consistent spacing.
     
     Args:
         points_in_dxf (dict): Dictionary containing points for each entity
+        original_corners (list): List of corner points of the expanded bounding box
         
     Returns:
-        dict: Dictionary containing interpolated points for each entity
+        dict: Dictionary containing interpolated points for each entity and corners
     """
     # Calculate minimum distances for each entity
     min_distances = {}
@@ -126,116 +176,89 @@ def analyze_and_interpolate_points(points_in_dxf):
         min_dist = min_distances[entity_id]
         interpolated_points[entity_id] = interpolate_points({entity_id: points}, min_dist)[entity_id]
 
+    # Create a new dictionary that includes both interpolated points and corners
+    points_and_corners = {'entities': interpolated_points, 'corners': original_corners}
+
     # Create a new figure for plotting points
     fig, ax = plt.subplots()
     
-
-    # Plot interpolated points in blue
+    # Plot interpolated points
     for entity_id, points in interpolated_points.items():
         xs, ys = zip(*points)
         ax.plot(xs, ys, 'o', markersize=4, label=f'Interpolated Entity {entity_id}')
     
-    ax.set_aspect('equal', adjustable='datalim')
-    ax.margins(0.02)
-    plt.grid(True)
-    plt.legend()
-    plt.title('Original (red) and Interpolated (blue) Points')
-    plt.show()
-
-    # Print results
-    print("\nInterpolated points for each entity:")
-    for entity_id, points in interpolated_points.items():
-        print(f"Entity {entity_id}: {len(points)} points")
-        # Calculate and print the average distance between points
-        distances = []
-        for i in range(len(points) - 1):
-            p1 = np.array(points[i])
-            p2 = np.array(points[i + 1])
-            distances.append(np.linalg.norm(p2 - p1))
-        avg_distance = sum(distances) / len(distances) if distances else 0
-        print(f"Average distance between points: {avg_distance:.4f}")
-    
-    return interpolated_points
-def extrapolate_points(interpolated_points, corners):
-    """
-    Extrapolate points based on the four corners of the projection.
-    
-    Args:
-        interpolated_points (dict): Dictionary containing interpolated points for each entity
-        corners (list): List of four corner points [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
-        
-    Returns:
-        dict: Dictionary containing extrapolated points for each entity
-    """
-    # Convert corners to numpy arrays for easier calculations
-    corners = np.array(corners)
-    
-    # Calculate the bounding box of the corners
-    min_x = np.min(corners[:, 0])
-    max_x = np.max(corners[:, 0])
-    min_y = np.min(corners[:, 1])
-    max_y = np.max(corners[:, 1])
-    
-    # Create a new figure for plotting
-    fig, ax = plt.subplots()
-    
-    # Plot the corners
+    # Plot corners
+    corners = np.array(original_corners)
     ax.plot(corners[:, 0], corners[:, 1], 'k*', markersize=10, label='Corners')
     
-    # Extrapolate points for each entity
-    extrapolated_points = {}
-    for entity_id, points in interpolated_points.items():
-        points = np.array(points)
-
-        if len(points) >= 2:
-            direction = points[-1] - points[0]
-            norm = np.linalg.norm(direction)
-            if norm == 0:
-                continue  # Skip extrapolation if direction vector is invalid
-            direction = direction / norm
-
-            extended_points = []
-            for point in points:
-                if (min_x <= point[0] <= max_x) and (min_y <= point[1] <= max_y):
-                    extended_points.append(point)
-                else:
-                    t_values = []
-                    if direction[0] != 0:
-                        t_values.append((min_x - point[0]) / direction[0])
-                        t_values.append((max_x - point[0]) / direction[0])
-                    if direction[1] != 0:
-                        t_values.append((min_y - point[1]) / direction[1])
-                        t_values.append((max_y - point[1]) / direction[1])
-
-                    valid_t = [t for t in t_values if t > 0]
-                    if valid_t:
-                        t = min(valid_t)
-                        extended_point = point + t * direction
-                        extended_points.append(extended_point)
-
-            extrapolated_points[entity_id] = extended_points
-            extended_points = np.array(extended_points)
-
-            if extended_points.shape[0] > 0 and extended_points.ndim == 2:
-                ax.plot(extended_points[:, 0], extended_points[:, 1], 'o', markersize=4, label=f'Entity {entity_id}')
-
-    # Set plot properties
     ax.set_aspect('equal', adjustable='datalim')
     ax.margins(0.02)
     plt.grid(True)
     plt.legend()
-    plt.title('Extrapolated Points')
+    plt.title('Interpolated Points and Corners')
     plt.show()
     
-    return extrapolated_points
+    return points_and_corners
+
+
+def process_dxf_to_json(dxf_path, output_dir=None, percentage_increase=20):
+    """
+    Process a DXF file and save the interpolated points and corners to a JSON file.
+    
+    Args:
+        dxf_path (str): Path to the input DXF file
+        output_dir (str, optional): Directory to save the JSON file. If None, saves in the same directory as the DXF file
+        percentage_increase (int, optional): Percentage to increase the bounding box dimensions. Defaults to 20
+        
+    Returns:
+        str: Path to the created JSON file
+    """
+    # Load and process the DXF file
+    msp = load_dxf(dxf_path)
+    points_in_dxf, original_corners = extract_figure(msp, percentage_increase=percentage_increase, title=f"DXF: {dxf_path}")
+    result = analyze_and_interpolate_points(points_in_dxf, original_corners)
+    
+    # Print summary of results
+    print("\nResults Summary:")
+    print(f"Number of entities: {len(result['entities'])}")
+    for entity_id, points in result['entities'].items():
+        print(f"Entity {entity_id}: {len(points)} points")
+    print(f"Number of corner points: {len(result['corners'])}")
+
+    # Determine output path
+    if output_dir is None:
+        output_dir = os.path.dirname(dxf_path)
+    else:
+        os.makedirs(output_dir, exist_ok=True)
+    
+    # Create output filename based on input filename
+    input_filename = os.path.basename(dxf_path)
+    output_filename = f"{os.path.splitext(input_filename)[0]}.json"
+    output_path = os.path.join(output_dir, output_filename)
+    
+    # Convert numpy arrays to lists for JSON serialization
+    json_result = {
+        'entities': {
+            str(k): [[float(x) for x in p] for p in v] 
+            for k, v in result['entities'].items()
+        },
+        'corners': [[float(x) for x in p] for p in result['corners']]
+    }
+    
+    # Save to JSON file
+    with open(output_path, 'w') as f:
+        json.dump(json_result, f, indent=2)
+    
+    print(f"\nResults saved to: {output_path}")
+    return output_path
 
 
 if __name__ == "__main__":
-    dxf_path = "../assets/cutting_patterns/custom_cutting_pattern_2_converted.dxf"  # <-- Replace this with the path to your DXF file
-    msp = load_dxf(dxf_path)
-    points_in_dxf = extract_figure(msp, title=f"DXF: {dxf_path}")
-    interpolated_points = analyze_and_interpolate_points(points_in_dxf)
-    corners = [(0, 0), (0, 100), (100, 0), (100, 100)]
-    extrapolated_points = extrapolate_points(interpolated_points, corners)
+    dxf_path = "../assets/cutting_patterns/custom_cutting_pattern_2.dxf"  # <-- Replace this with the path to your DXF file
+    output_path = process_dxf_to_json(dxf_path)
+    
+
+
+
     
     

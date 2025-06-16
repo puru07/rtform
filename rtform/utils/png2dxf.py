@@ -39,7 +39,7 @@ def contours_to_dxf(contours, dxf_path):
 
 if __name__ == "__main__":
     png_path = "../assets/cutting_patterns/custom_cutting_pattern_2.png"  # <-- Replace with your actual image file
-    dxf_path = os.path.splitext(png_path)[0] + "_converted.dxf"
+    dxf_path = os.path.splitext(png_path)[0] + ".dxf"
 
     image = read_and_display_image(png_path)
     contours = find_contours(image)

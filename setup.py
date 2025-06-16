@@ -23,8 +23,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'move_to_home = rtform.move_to_home:main',
-            'move_to_pose = rtform.move_to_pose:main',
+            'run_rtform = rtform.run_rtform:main',
         ],
     },
 )
